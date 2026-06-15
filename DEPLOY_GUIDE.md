@@ -1,441 +1,260 @@
-# CURBSIDE — Deployment Guide (Idiot-Proof Edition)
-
-> This guide assumes you have ZERO experience with deployment.
-> Every click is documented. You'll have a live app in ~1 hour.
-
----
-
-## WHAT YOU'RE SETTING UP
-
-```
-Your laptop
-   ↓ (push code)
-GitHub (stores your code)
-   ↓                          ↓
-Railway (runs backend)     Vercel (runs frontend)
-   ↓
-Supabase (database)
-   ↓
-Twilio (SMS) + Jitsi (video) ← these are just API keys
-```
-
----
-
-## STEP 0: THINGS YOU NEED BEFORE STARTING
-
-### 0.1 — Install Node.js
-1. Go to https://nodejs.org
-2. Download the **LTS** version (big green button)
-3. Run the installer, click Next on everything
-4. To verify: open Terminal (Mac) or Command Prompt (Windows), type:
-   ```
-   node --version
-   ```
-   You should see something like `v20.x.x`. If you see an error, restart your computer and try again.
-
-### 0.2 — Install Git
-1. Go to https://git-scm.com/downloads
-2. Download for your OS
-3. Run installer, click Next on everything (defaults are fine)
-4. Verify:
-   ```
-   git --version
-   ```
-
-### 0.3 — Create accounts (all free)
-Open each link in a new tab. Sign up with your email. All have free tiers.
-
-| Service | Link | What it does |
-|---------|------|-------------|
-| GitHub | https://github.com/signup | Stores your code |
-| Railway | https://railway.app | Runs your backend server |
-| Vercel | https://vercel.com/signup | Hosts your frontend |
-| Supabase | https://supabase.com/dashboard | Your database |
-| Twilio | https://www.twilio.com/try-twilio | Sends SMS (optional for now) |
-
-**TIP**: Sign up for Railway and Vercel using your GitHub account. It makes connecting easier later.
-
----
-
-## STEP 1: GET YOUR CODE ON GITHUB
-
-### 1.1 — Create a GitHub repository
-1. Go to https://github.com/new
-2. Repository name: `curbside`
-3. Description: `GP-specialist consultation platform`
-4. Select **Private** (your code, your business)
-5. Do NOT check any boxes (no README, no .gitignore — we have our own)
-6. Click **Create repository**
-7. You'll see a page with instructions. Leave this tab open.
-
-### 1.2 — Push your code to GitHub
-1. Open Terminal / Command Prompt
-2. Navigate to your curbside folder:
-   ```bash
-   cd ~/Desktop/curbside
-   ```
-   (or wherever you unzipped the files)
-
-3. Run these commands ONE BY ONE:
-   ```bash
-   git init
-   ```
-   ```bash
-   git add .
-   ```
-   ```bash
-   git commit -m "Initial MVP"
-   ```
-   ```bash
-   git branch -M main
-   ```
-   ```bash
-   git remote add origin https://github.com/YOUR_USERNAME/curbside.git
-   ```
-   ⚠️ Replace `YOUR_USERNAME` with your actual GitHub username!
-
-   ```bash
-   git push -u origin main
-   ```
-
-4. It may ask for your GitHub username and password.
-   - Username: your GitHub username
-   - Password: this is NOT your GitHub password. You need a Personal Access Token.
-   - Go to https://github.com/settings/tokens → Generate new token (classic)
-   - Check the `repo` box → Generate → Copy the token → Paste it as your password
-
-5. Refresh your GitHub repo page. You should see your files!
-
----
-
-## STEP 2: SET UP SUPABASE (Database)
-
-### 2.1 — Create a project
-1. Go to https://supabase.com/dashboard
-2. Click **New Project**
-3. Organization: select your default org (or create one — just click through)
-4. Project name: `curbside`
-5. Database password: click **Generate a password** → **COPY THIS AND SAVE IT SOMEWHERE SAFE**
-6. Region: **Southeast Asia (Singapore)** — closest to Australia
-   - If Sydney is available, pick that instead
-7. Click **Create new project**
-8. Wait 1-2 minutes for it to set up
-
-### 2.2 — Get your connection details
-1. Once the project is ready, click **Settings** (gear icon, left sidebar)
-2. Click **Database** (under Configuration)
-3. Scroll to **Connection string** section
-4. Click **URI** tab
-5. You'll see something like:
-   ```
-   postgresql://postgres.[project-ref]:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres
-   ```
-6. Copy this. Replace `[YOUR-PASSWORD]` with the password you saved earlier.
-7. Save this entire string — this is your `DATABASE_URL`.
-
-### 2.3 — Get your API keys
-1. Still in Settings → click **API** (under Configuration)
-2. You'll see:
-   - **Project URL**: something like `https://abc123.supabase.co` → Save this
-   - **anon public key**: a long `eyJ...` string → Save this
-   - **service_role secret key**: another long string → Save this (KEEP SECRET)
-
-### 2.4 — Note for MVP
-> For the initial MVP, we're using SQLite bundled with the backend (no Supabase DB needed yet).
-> When you're ready to scale, swap `db.js` to use the Supabase Postgres connection.
-> For now, just save those credentials — you'll need them later.
-> 
-> What we DO use Supabase for right now: **nothing yet — it's ready for Phase 2 scaling.**
-> The MVP runs entirely on SQLite inside Railway.
-
----
-
-## STEP 3: SET UP RAILWAY (Backend Server)
-
-### 3.1 — Create a new project
-1. Go to https://railway.app/dashboard
-2. Click **New Project**
-3. Click **Deploy from GitHub repo**
-4. If it asks to connect GitHub: click **Connect** and authorize Railway
-5. Find and select your `curbside` repo
-6. Railway will start deploying. It will probably fail — that's OK! We need to add environment variables first.
-
-### 3.2 — Configure the service
-1. Click on the service card (the box that appeared)
-2. Click **Settings** tab
-3. Under **Build & Deploy**:
-   - Build Command: `npm install`
-   - Start Command: `node server.js`
-   - Watch Paths: leave empty
-4. Under **Networking**:
-   - Click **Generate Domain**
-   - You'll get something like `curbside-production-abc123.up.railway.app`
-   - **SAVE THIS URL** — this is your backend URL
-
-### 3.3 — Add environment variables
-1. Click **Variables** tab
-2. Click **New Variable** for each of these:
-
-```
-PORT = 3000
-JWT_SECRET = (make up a long random string, like: kj4h5kjh345kjhSDFG345sdfg8790dfgh)
-JWT_EXPIRES_IN = 7d
-DB_PATH = ./curbside.db
-SMS_PROVIDER = mock
-VIDEO_PROVIDER = jitsi
-JITSI_DOMAIN = meet.jit.si
-AI_PROVIDER = mock
-EMAIL_PROVIDER = mock
-```
-
-**To generate a good JWT_SECRET:**
-- Go to https://randomkeygen.com
-- Scroll to "CodeIgniter Encryption Keys"
-- Copy one of those
-
-3. After adding all variables, Railway will auto-redeploy.
-
-### 3.4 — Check if it's working
-1. Wait for deploy to finish (green checkmark)
-2. Open your Railway URL in a browser:
-   ```
-   https://YOUR-RAILWAY-URL.up.railway.app/api/health
-   ```
-3. You should see:
-   ```json
-   {"ok": true, "app": "Curbside MVP", "time": "...", "routes_loaded": true}
-   ```
-4. 🎉 **YOUR BACKEND IS LIVE!**
-
-### 3.5 — If deploy fails (troubleshooting)
-- Click on the failed deploy → read the logs
-- Common issues:
-  - Missing env variable → add it in Variables tab
-  - Build error → check that package.json is correct
-  - Port issue → make sure PORT=3000 is set
-- Still stuck? Click **Deploy Logs** and look for red error text
-
----
-
-## STEP 4: SET UP VERCEL (Frontend)
-
-### 4.1 — Import your project
-1. Go to https://vercel.com/dashboard
-2. Click **Add New...** → **Project**
-3. Click **Import** next to your `curbside` repo
-4. Configure:
-   - Framework Preset: **Other**
-   - Root Directory: click **Edit** → type `public` → click **Continue**
-   - Build Command: leave empty (it's static HTML)
-   - Output Directory: `.`
-5. Click **Deploy**
-
-### 4.2 — Add environment variables
-1. Go to your project **Settings** → **Environment Variables**
-2. Add:
-   ```
-   NEXT_PUBLIC_API_URL = https://YOUR-RAILWAY-URL.up.railway.app
-   ```
-   (use your actual Railway URL from Step 3.3)
-
-### 4.3 — Check if it's working
-1. Vercel gives you a URL like `curbside-abc123.vercel.app`
-2. Open it in your browser
-3. You should see the Curbside frontend
-4. 🎉 **YOUR FRONTEND IS LIVE!**
-
-### 4.4 — Custom domain (optional, do later)
-1. In Vercel → Settings → Domains
-2. Click **Add**
-3. Type your domain: `app.curbside.com.au`
-4. Vercel tells you which DNS records to add
-5. Go to your domain registrar (Namecheap, GoDaddy, etc.)
-6. Add the DNS records Vercel tells you
-7. Wait 5-30 minutes for DNS to propagate
-8. Done — your app is at `app.curbside.com.au`
-
----
-
-## STEP 5: SET UP TWILIO (SMS — Optional for MVP)
-
-### 5.1 — Get your credentials
-1. Go to https://console.twilio.com
-2. On the dashboard, you'll see:
-   - **Account SID**: starts with `AC...` → Copy it
-   - **Auth Token**: click the eye icon to reveal → Copy it
-
-### 5.2 — Get a phone number
-1. In Twilio console, click **Phone Numbers** → **Manage** → **Buy a number**
-2. Country: Australia
-3. Capabilities: check **SMS**
-4. Click **Search** → pick any number → **Buy** (free on trial)
-5. Your number looks like: `+61412345678` → Copy it
-
-### 5.3 — Add to Railway
-1. Go back to Railway → your project → Variables tab
-2. Update/add:
-   ```
-   SMS_PROVIDER = twilio
-   TWILIO_ACCOUNT_SID = AC1234567890abcdef1234567890abcdef
-   TWILIO_AUTH_TOKEN = your_auth_token_here
-   TWILIO_FROM_NUMBER = +61412345678
-   ```
-3. Railway auto-redeploys. SMS is now live!
-
-### 5.4 — Twilio trial limitations
-- Free trial: can only send SMS to **verified numbers**
-- To verify a number: Twilio Console → Phone Numbers → Verified Caller IDs → Add
-- To remove this limit: upgrade to paid ($20 minimum top-up)
-- Cost per SMS in Australia: ~$0.06 AUD
-
----
-
-## STEP 6: VIDEO LINKS (Jitsi — Free, No Setup)
-
-### 6.1 — It already works!
-Jitsi Meet is free and needs NO API keys. The app generates video room URLs like:
-```
-https://meet.jit.si/curbside-consult-abc123
-```
-
-Anyone with the link can join. No accounts needed. Works on mobile browsers.
-
-### 6.2 — Upgrading to Daily.co (optional, better quality)
-1. Go to https://www.daily.co/signup
-2. Create account
-3. Dashboard → **Developers** → copy your API key
-4. Your domain is: `https://YOUR-SUBDOMAIN.daily.co`
-5. Add to Railway:
-   ```
-   VIDEO_PROVIDER = daily
-   DAILY_API_KEY = your_daily_api_key
-   DAILY_DOMAIN = https://yourname.daily.co
-   ```
-
-### 6.3 — Using MS Teams links instead
-If you prefer MS Teams:
-- The app generates a Jitsi link by default
-- You can manually paste a Teams meeting link when creating a consult
-- Full Teams API integration requires a Microsoft 365 business account + Azure app registration (complex — do this later)
-
----
-
-## STEP 7: AI DOCUMENTATION (Optional for MVP)
-
-### 7.1 — Mock mode (default)
-The app ships with mock AI responses. Consults still work — they just get placeholder SOAP notes and letters instead of AI-generated ones.
-
-### 7.2 — Activate Claude AI
-1. Go to https://console.anthropic.com
-2. Sign up → add a payment method
-3. Go to **API Keys** → **Create Key** → Copy it
-4. Add to Railway:
-   ```
-   AI_PROVIDER = claude
-   ANTHROPIC_API_KEY = sk-ant-api03-xxxxxxxxxxxx
-   ```
-5. Cost: ~$0.01-0.05 per consult (very cheap)
-
----
-
-## STEP 8: VERIFY EVERYTHING WORKS
-
-### 8.1 — Checklist
-Open each URL and verify:
-
-| Check | URL | Expected |
-|-------|-----|----------|
-| Backend health | `https://YOUR-RAILWAY-URL/api/health` | `{"ok": true}` |
-| Frontend loads | `https://YOUR-VERCEL-URL` | Curbside login page |
-| Register works | Frontend → Sign up as GP | Success message |
-| Login works | Frontend → Log in | Dashboard loads |
-| Video link | Create a consult → click video link | Jitsi room opens |
-
-### 8.2 — Test the full flow
-1. Register as a GP (role: gp)
-2. Register as a specialist in a different browser/incognito (role: specialist)
-3. As GP: create a consult request
-4. As specialist: toggle available → see incoming request → accept
-5. Both: click video link → Jitsi room opens
-6. End consult → see SOAP note generated
-
----
-
-## STEP 9: ONGOING MAINTENANCE
-
-### 9.1 — Pushing updates
-When you change code locally:
-```bash
-git add .
-git commit -m "describe what you changed"
-git push
-```
-Both Railway and Vercel auto-deploy when you push to GitHub.
-
-### 9.2 — Viewing logs
-- **Railway**: click your service → **Deployments** → click latest → **View Logs**
-- **Vercel**: project → **Deployments** → click latest → **Functions** tab
-
-### 9.3 — Database backups
-The SQLite database lives inside your Railway container. To back it up:
-1. Railway dashboard → your service → **Settings**
-2. Under **Railway CLI**: install it locally
-3. Run: `railway shell` then `cat curbside.db | base64 > backup.txt`
-
-**Better long-term**: migrate to Supabase Postgres (has automatic daily backups).
-
-### 9.4 — Costs summary
-
-| Service | Free tier | When you'd pay |
-|---------|-----------|----------------|
-| Railway | $5 free credit/month | After ~500 hours or heavy traffic |
-| Vercel | 100GB bandwidth/month | Extremely high traffic only |
-| Supabase | 500MB DB, 50k requests | If/when you migrate DB there |
-| Twilio | ~$15 trial credit | After trial, ~$0.06/SMS |
-| Jitsi | Unlimited, forever | Never (or switch to paid provider for quality) |
-| Claude AI | Pay per use | ~$0.01-0.05 per consult |
-
-**Total to run MVP: $0-5/month** until you have real users.
-
----
-
-## QUICK REFERENCE — YOUR SAVED URLS & KEYS
-
-Fill this in as you go:
-
-```
-GITHUB REPO:       https://github.com/________/curbside
-RAILWAY BACKEND:   https://__________________.up.railway.app
-VERCEL FRONTEND:   https://__________________.vercel.app
-SUPABASE PROJECT:  https://__________________.supabase.co
-SUPABASE ANON KEY: eyJ_____________________________
-TWILIO SID:        AC______________________________
-TWILIO NUMBER:     +61_____________________________
-ANTHROPIC KEY:     sk-ant-api03-___________________
-```
-
----
-
-## TROUBLESHOOTING
-
-### "Deploy failed" on Railway
-→ Click deploy → read logs → usually a missing env var or typo in package.json
-
-### "Cannot connect to API" on frontend  
-→ Check that NEXT_PUBLIC_API_URL in Vercel matches your Railway URL exactly (with https://)
-
-### "Token expired" errors
-→ Log out and log back in. JWTs expire after 7 days by default.
-
-### SMS not sending
-→ Check SMS_PROVIDER=twilio (not mock). Check Twilio balance. Check recipient is verified (trial mode).
-
-### Video link doesn't work
-→ Jitsi is sometimes slow in Australia. Try refreshing. Or switch to Daily.co.
-
-### Database reset after deploy
-→ Railway resets the filesystem on each deploy. This is why you should migrate to Supabase Postgres before going live with real patients.
-
----
-
-*End of deployment guide. Save this file — you'll reference it repeatedly.*
+/**
+ * AI Service — mock or Claude API
+ * 
+ * Set AI_PROVIDER=claude + ANTHROPIC_API_KEY to activate real AI.
+ * Mock returns realistic canned responses for development.
+ */
+require('dotenv').config();
+
+const provider = process.env.AI_PROVIDER || 'mock';
+
+// ── Mock AI responses (transcript-aware) ──
+function extractDialogue(transcript) {
+  if (!transcript || !transcript.trim()) return [];
+  return transcript.split('\n').filter(l => l.trim());
+}
+
+const mockAI = {
+  async structureCase(caseSummary, specialty) {
+    console.log(`[AI:MOCK] Structuring case for ${specialty}`);
+    return {
+      presenting: `${caseSummary.slice(0, 140)}`,
+      temporal: `Onset and progression as described in the GP's summary.`,
+      relevant_history: 'See GP case summary for full history, medications and allergies.',
+      differential: [
+        `Most likely ${specialty.toLowerCase()} differential based on presentation`,
+        'Alternative diagnosis to exclude',
+        'Less likely consideration'
+      ],
+      missing_information: [
+        'Duration, severity and progression details',
+        'Response to any treatments already tried'
+      ],
+      suggested_questions: [
+        'What treatments have already been tried and with what effect?',
+        'Any relevant family or medication history?'
+      ],
+      red_flags: 'None explicitly identified — specialist to assess during consult.',
+      recommended_next_steps: [
+        'Real-time specialist video review',
+        'Targeted investigations as indicated',
+        'Safety-net follow-up'
+      ]
+    };
+  },
+
+  async generateSOAP(transcript, caseSummary, consultDetails) {
+    console.log('[AI:MOCK] Synthesising SOAP from request + transcript');
+    return synthesiseSOAP(transcript, caseSummary, consultDetails);
+  },
+
+  async generateLetter(soapNote, consultDetails) {
+    console.log('[AI:MOCK] Generating specialist letter');
+    const date = new Date().toLocaleDateString('en-AU');
+    return {
+      content:
+        `Dear Dr ${consultDetails.gp_name},\n\n` +
+        `Thank you for consulting me regarding ${consultDetails.patient_initials} ` +
+        `(${consultDetails.patient_age}${consultDetails.patient_sex}) via Curbside on ${date}.\n\n` +
+        `IMPRESSION\n${soapNote.assessment}\n\n` +
+        `RECOMMENDATIONS\n${(soapNote.plan || []).join('\n')}\n\n` +
+        `FOLLOW-UP\n${soapNote.follow_up}\n\n` +
+        `Please contact me if I can be of further assistance.\n\n` +
+        `Kind regards,\n${consultDetails.specialist_name}\n${consultDetails.specialist_qualifications || ''}`
+    };
+  },
+
+  async generateReferral(soapNote, consultDetails) {
+    console.log('[AI:MOCK] Generating referral letter');
+    const date = new Date().toLocaleDateString('en-AU');
+    return {
+      content:
+        `Date: ${date}\n\n` +
+        `RE: Referral — ${consultDetails.patient_initials} (${consultDetails.patient_age}${consultDetails.patient_sex})\n\n` +
+        `Dear ${consultDetails.specialist_name},\n\n` +
+        `Following our Curbside consultation, I am referring this patient for formal ${consultDetails.specialty} review.\n\n` +
+        `REASON FOR REFERRAL\n${soapNote.assessment}\n\n` +
+        `MANAGEMENT TO DATE\n${(soapNote.plan || []).join('\n')}\n\n` +
+        `This referral is valid for 12 months from the date above.\n\n` +
+        `Kind regards,\nDr ${consultDetails.gp_name}`
+    };
+  },
+
+  async generatePatientHandout(soapNote, consultDetails) {
+    console.log('[AI:MOCK] Generating patient handout');
+    return {
+      content:
+        `WHAT WE DISCUSSED TODAY\n\n` +
+        `Your GP spoke with a ${consultDetails.specialty} specialist about your health.\n\n` +
+        `WHAT THE SPECIALIST THINKS\n${soapNote.assessment}\n\n` +
+        `WHAT HAPPENS NEXT\n${(soapNote.plan || []).join('\n')}\n\n` +
+        `WHEN TO GET URGENT HELP\nGo to your nearest Emergency Department or call 000 ` +
+        `if your symptoms suddenly worsen or you feel seriously unwell.\n\n` +
+        `Questions? Contact your GP practice.`
+    };
+  }
+};
+
+// ── SOAP synthesiser: classify the consult request + each transcript line into
+//    Subjective / Objective / Assessment / Plan (used as the always-available
+//    fallback when the Claude API is unavailable). Heuristic, but properly sorts
+//    the conversation rather than dumping it into one field. ──
+const SOAP_PATTERNS = {
+  objective: /(on exam|examination|inspect|palpat|auscultat|vitals?|bp\b|blood pressure|heart rate|\bhr\b|temp(erature)?|\bsats?\b|spo2|ecg|x-?ray|imaging|ultrasound|ct\b|mri|bloods?|pathology|results? (show|are|were)|\b\d+\/\d+\b|\bmmhg\b|\bbpm\b|appears|looks|noted on|photo shows|lesion|rash is|swelling|tender)/i,
+  assessment: /(likely|impression|diagnosis|consistent with|suggestive of|differential|in keeping with|most probably|appears to be|this is (a|an|likely)|i (think|suspect|believe)|points to|secondary to|rule out|working diagnosis)/i,
+  plan: /\b(start|commence|cease|stop|prescribe|switch|titrat\w*|arrange|refer|review|order|request|book|continue|advise|recommend|monitor|repeat|increase|decrease|reduce|wean|admit|escalate|discharge|apply|give|investigat\w*|follow[- ]?up|safety[- ]?net\w*)\b/i,
+};
+// Lines that describe what the patient reports → subjective
+const SUBJECTIVE_HINT = /(reports?|complain|describ|history of|presents? with|started|onset|duration|symptom|pain|feeling|noticed|for the (last|past)|weeks?|days?|months?|denies|no history|patient (is|has|states))/i;
+
+function stripSpeaker(line) { return line.replace(/^[^:]{0,40}:\s*/, '').trim(); }
+
+function synthesiseSOAP(transcript, caseSummary, d) {
+  const lines = (transcript || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const S = [], O = [], A = [], P = [];
+  // The consult request always seeds the subjective (chief complaint + history).
+  if (caseSummary && caseSummary.trim() && !/no transcript/i.test(caseSummary)) {
+    S.push(`Referral reason: ${caseSummary.trim()}`);
+  }
+  for (const raw of lines) {
+    const stripped = stripSpeaker(raw);
+    if (!stripped) continue;
+    // Split each utterance into sentences so a mixed "diagnosis + plan" line is sorted correctly.
+    const sentences = stripped.split(/(?<=[.!?])\s+|;\s+/).map(x => x.trim()).filter(Boolean);
+    for (const t of sentences) {
+      if (SOAP_PATTERNS.plan.test(t)) P.push(t);
+      else if (SOAP_PATTERNS.assessment.test(t)) A.push(t);
+      else if (SOAP_PATTERNS.objective.test(t)) O.push(t);
+      else if (SUBJECTIVE_HINT.test(t)) S.push(t);
+      else S.push(t);
+    }
+  }
+  const join = (arr) => arr.join(' ');
+  const pid = `${d.patient_initials || 'Patient'} (${d.patient_age || '?'}${d.patient_sex || ''})`;
+
+  return {
+    subjective: S.length
+      ? `${pid}. ${join(S)}`
+      : `${pid}. ${caseSummary ? caseSummary.trim() : 'History as per referral.'}`,
+    objective: O.length
+      ? join(O)
+      : 'No formal examination performed during the video consultation; findings limited to history and any images/results provided.',
+    assessment: A.length
+      ? join(A)
+      : `Working ${(d.specialty || 'clinical').toLowerCase()} impression formulated during the consultation (see Plan).`,
+    plan: P.length
+      ? P.map((t, i) => `${i + 1}. ${t.charAt(0).toUpperCase() + t.slice(1)}`)
+      : ['1. Management as agreed during consultation', '2. Follow-up as advised', '3. Safety-netting advice provided'],
+    follow_up: 'Review per the plan above, or sooner if symptoms worsen.',
+    safety_netting: 'Re-present urgently or attend the nearest Emergency Department if symptoms worsen rapidly, new severe symptoms develop, or the patient feels seriously unwell.',
+    red_flags_identified: null,
+    mbs_item_recommendation: 'PES pathway (GP item 2484–2495 by duration) with specialist video item 91822 (initial) / 91823 (subsequent).'
+  };
+}
+
+// ── Claude API provider ──
+const claudeAI = {
+  async _call(systemPrompt, userPrompt) {
+    let res, data;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 3000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      });
+    } catch (e) {
+      throw new Error(`Anthropic request failed: ${e.message}`);
+    }
+    data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${data?.error?.message || 'rejected'}`);
+    const text = data.content?.[0]?.text || '';
+    if (!text.trim()) throw new Error('Anthropic returned empty content');
+    try {
+      return JSON.parse(text.replace(/```json\n?|```/g, '').trim());
+    } catch {
+      return { content: text };
+    }
+  },
+
+  async structureCase(caseSummary, specialty) {
+    console.log(`[AI:CLAUDE] Structuring case for ${specialty}`);
+    return this._call(
+      `You are a senior clinical triage registrar preparing a concise, rigorous pre-consultation summary for an Australian ${specialty} specialist. Use precise medical terminology, accepted abbreviations, and Australian conventions (TGA-approved drug names, SI units, PBS context where relevant). Ground every statement in the GP's case summary — do NOT invent history, examination findings, or results that were not provided; where information is absent, list it under missing_information rather than fabricating it. Return JSON only, no prose outside the JSON.`,
+      `Structure the following GP case summary for a ${specialty} specialist review.\n\nGP CASE SUMMARY:\n"""${caseSummary}"""\n\nReturn exactly this JSON shape:\n{\n  "presenting": "Precise 1-2 sentence problem statement using clinical terminology (age, sex, primary problem, duration).",\n  "temporal": "Onset, progression and any temporal or causal associations (e.g. medication latency).",\n  "relevant_history": "Pertinent PMHx, current medications with doses, allergies, relevant social/family history as stated.",\n  "differential": ["Most likely diagnosis with brief rationale", "Important alternative to exclude", "Less likely consideration"],\n  "missing_information": ["Specific data the specialist will need that was not provided", "..."],\n  "suggested_questions": ["Targeted question the specialist should ask or examination to direct", "..."],\n  "red_flags": "Any features mandating urgent escalation, or 'None identified from the information provided'.",\n  "recommended_next_steps": ["Concrete next step", "Investigation or management option", "..."]\n}`
+    );
+  },
+
+  async generateSOAP(transcript, caseSummary, consultDetails) {
+    console.log('[AI:CLAUDE] Generating SOAP note');
+    return this._call(
+      `You are an experienced medical scribe producing a formal SOAP note from a real-time GP\u2013specialist (${consultDetails.specialty}) video consultation in Australia. Your core task is SYNTHESIS: read the whole conversation and the referral, then actively decide which part of each statement belongs in which SOAP heading \u2014 do not transcribe verbatim and do not dump dialogue into one field. Classify rigorously: SUBJECTIVE = the patient's reported history, symptoms, timeline and concerns (from the referral and what is said about the patient); OBJECTIVE = examination findings, vital signs, and imaging/pathology results actually mentioned (if none, say so); ASSESSMENT = the specialist's clinical reasoning, most likely diagnosis and relevant differentials; PLAN = the agreed actions only (medication changes with TGA drug name + dose/route/frequency, investigations, referrals, monitoring, follow-up). Speaker labels in the transcript indicate who is talking, not which SOAP section the content belongs to \u2014 a GP may state an exam finding (Objective) and a specialist may give history back (Subjective). Write in precise clinical language with standard abbreviations and SI units. Ground everything strictly in the transcript and referral; never invent findings, medications or decisions. Return JSON only.`,
+      `Produce a SOAP note for this consultation.\n\nPatient: ${consultDetails.patient_initials}, ${consultDetails.patient_age||''}${consultDetails.patient_sex||''}\nReferring GP: ${consultDetails.gp_name}\nSpecialist: ${consultDetails.specialist_name} (${consultDetails.specialist_qualifications||''})\nSpecialty: ${consultDetails.specialty}\n\nORIGINAL GP CASE SUMMARY:\n"""${caseSummary}"""\n\nVERBATIM CONSULTATION TRANSCRIPT:\n"""${transcript}"""\n\nReturn exactly this JSON:\n{\n  "subjective": "Patient's history and the clinical problem as presented and elaborated during the consult, in clinical prose.",\n  "objective": "Examination findings, observations, vitals, imaging/pathology actually discussed. State 'Not formally examined during video consultation' if none.",\n  "assessment": "The specialist's clinical impression and reasoning, including most likely diagnosis and relevant differentials considered.",\n  "plan": ["Numbered, specific actions: medication changes with exact drug/dose/route/frequency, investigations, referrals, monitoring", "..."],\n  "follow_up": "Explicit review interval and arrangements.",\n  "safety_netting": "Specific advice on what should prompt urgent re-presentation (symptoms, timeframe, where to go).",\n  "red_flags_identified": "Any red flags raised, or null.",\n  "mbs_item_recommendation": "Likely MBS billing pathway (PES item by duration + the specialist video item)."\n}`
+    );
+  },
+
+  async generateLetter(soapNote, consultDetails) {
+    console.log('[AI:CLAUDE] Generating specialist letter');
+    return this._call(
+      `You are writing a formal specialist opinion letter from the consultant back to the referring GP following an Australian Curbside video consultation. Use the conventional structure and register of a specialist letter: addressed to the GP, a clear clinical summary, impression, specific recommendations, and follow-up. Professional, concise, no padding. Base it strictly on the SOAP note content. Return JSON only.`,
+      `Write the specialist opinion letter.\n\nSpecialist: ${consultDetails.specialist_name}, ${consultDetails.specialist_qualifications||''}\nReferring GP: Dr ${consultDetails.gp_name}\nPatient: ${consultDetails.patient_initials}, ${consultDetails.patient_age||''}${consultDetails.patient_sex||''}\nDate: ${new Date().toLocaleDateString('en-AU')}\n\nSOAP NOTE (source of truth):\n${JSON.stringify(soapNote)}\n\nStructure the letter as: salutation ("Dear Dr ${consultDetails.gp_name},"); opening line thanking for the Curbside consultation and naming the patient; "Clinical summary"; "Impression"; "Recommendations" (as clear points); "Follow-up"; closing and sign-off with name and qualifications. Return JSON: { "content": "full letter text with line breaks" }`
+    );
+  },
+
+  async generateReferral(soapNote, consultDetails) {
+    console.log('[AI:CLAUDE] Generating referral letter');
+    return this._call(
+      `You are drafting a formal GP-to-specialist referral letter (Australian format) that formalises a follow-up arising from a Curbside consultation. Include the standard components a specialist's rooms require. Base it strictly on the SOAP note. Return JSON only.`,
+      `Write the referral letter.\n\nFrom: Dr ${consultDetails.gp_name} (referring GP)\nTo: ${consultDetails.specialist_name}, ${consultDetails.specialist_qualifications||''}\nPatient: ${consultDetails.patient_initials}, ${consultDetails.patient_age||''}${consultDetails.patient_sex||''}\nDate: ${new Date().toLocaleDateString('en-AU')}\n\nSOAP NOTE (source of truth):\n${JSON.stringify(soapNote)}\n\nStructure: date; "Dear ${consultDetails.specialist_name},"; reason for referral; relevant history and current medications; examination/investigations to date; specific clinical question(s) for the specialist; statement that the referral is valid 12 months; sign-off. Return JSON: { "content": "full referral letter text with line breaks" }`
+    );
+  },
+
+  async generatePatientHandout(soapNote, consultDetails) {
+    console.log('[AI:CLAUDE] Generating patient handout');
+    return this._call(
+      `Write a plain-language patient handout (Australian English, ~Year 8 reading level). Warm, clear, reassuring, no medical jargon (translate any clinical terms). Accurately reflect the SOAP note without adding new advice. Return JSON only.`,
+      `Write the patient handout based on this SOAP note:\n${JSON.stringify(soapNote)}\n\nUse these clear sections: "What we talked about today"; "What the specialist thinks is going on"; "What we're going to do" (medicines in plain words, any tests, next steps); "When to come back"; "When to get urgent help (go to your nearest Emergency Department or call 000)". Return JSON: { "content": "full handout text with line breaks" }`
+    );
+  }
+};
+
+// ── Export active provider ──
+// With Claude, every method falls back to the transcript-aware synthesiser if the
+// API fails or returns an unusable shape — documents ALWAYS generate (never blank).
+function withFallback(claudeFn, mockFn, isValid) {
+  return async (...args) => {
+    if (provider !== 'claude') return mockFn(...args);
+    try {
+      const out = await claudeFn(...args);
+      if (!isValid(out)) throw new Error('Claude returned an unusable shape');
+      return out;
+    } catch (e) {
+      console.error(`[AI:CLAUDE] failed — using synthesiser fallback:`, e.message);
+      return mockFn(...args);
+    }
+  };
+}
+const hasContent = o => o && typeof o.content === 'string' && o.content.trim().length > 0;
+const ai = {
+  structureCase: withFallback(claudeAI.structureCase.bind(claudeAI), mockAI.structureCase.bind(mockAI), o => o && o.presenting),
+  generateSOAP: withFallback(claudeAI.generateSOAP.bind(claudeAI), mockAI.generateSOAP.bind(mockAI), o => o && o.subjective && o.assessment),
+  generateLetter: withFallback(claudeAI.generateLetter.bind(claudeAI), mockAI.generateLetter.bind(mockAI), hasContent),
+  generateReferral: withFallback(claudeAI.generateReferral.bind(claudeAI), mockAI.generateReferral.bind(mockAI), hasContent),
+  generatePatientHandout: withFallback(claudeAI.generatePatientHandout.bind(claudeAI), mockAI.generatePatientHandout.bind(mockAI), hasContent),
+};
+
+module.exports = {
+  structureCase: (c, s) => ai.structureCase(c, s),
+  generateSOAP: (t, c, d) => ai.generateSOAP(t, c, d),
+  generateLetter: (s, d) => ai.generateLetter(s, d),
+  generateReferral: (s, d) => ai.generateReferral(s, d),
+  generatePatientHandout: (s, d) => ai.generatePatientHandout(s, d)
+};
