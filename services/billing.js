@@ -37,9 +37,8 @@ const LOCATION_LABELS = {
   in_rooms: 'in consulting rooms', out_rooms: 'out of consulting rooms', raca: 'residential aged care'
 };
 
-// Time unit for tier selection. 'minutes' (default, production-correct per the MBS
-// factsheet: 6-20 min = first tier) or 'seconds' (demo/testing only, so a short
-// call still produces a billable item). PRODUCTION MUST USE MINUTES.
+// Time unit for tier selection. 'seconds' (default, for demo/testing so a short
+// call still produces a real item) or 'minutes' (production, per the factsheet).
 const TIME_UNIT = (process.env.BILLING_TIME_UNIT || 'minutes').toLowerCase();
 
 function durationTier(seconds) {

@@ -44,29 +44,8 @@ const mockAI = {
   },
 
   async generateSOAP(transcript, caseSummary, consultDetails) {
-    console.log('[AI:MOCK] Generating SOAP note from transcript');
-    const lines = extractDialogue(transcript);
-    const convo = lines.join(' ');
-    const hasTranscript = lines.length > 0;
-
-    return {
-      subjective: hasTranscript
-        ? `${consultDetails.patient_initials} (${consultDetails.patient_age}${consultDetails.patient_sex}). Referral: ${caseSummary.slice(0, 120)}. Discussion captured: ${convo.slice(0, 300)}`
-        : `${consultDetails.patient_initials} presented with: ${caseSummary.slice(0, 200)}`,
-      objective: hasTranscript
-        ? `Findings discussed during ${consultDetails.specialty} video consultation between ${consultDetails.gp_name} and ${consultDetails.specialist_name}.`
-        : 'Clinical findings discussed during video consultation.',
-      assessment: hasTranscript
-        ? `Working impression reached during specialist discussion (see transcript). Specialty: ${consultDetails.specialty}.`
-        : `Working diagnosis pending — limited transcript available.`,
-      plan: hasTranscript
-        ? derivePlanFromTranscript(lines)
-        : ['1. Continue current management', '2. Investigations as discussed', '3. Follow-up 2-4 weeks', '4. Safety netting advice given'],
-      follow_up: 'Review in 2-4 weeks or sooner if symptoms worsen.',
-      safety_netting: 'Re-present urgently or attend the nearest Emergency Department if symptoms worsen rapidly, new severe symptoms develop, or the patient feels seriously unwell.',
-      red_flags_identified: null,
-      mbs_item_recommendation: 'PES pathway (GP item 2484-2495) applicable if GP in room with patient; specialist bills 91822/91823.'
-    };
+    console.log('[AI:MOCK] Synthesising SOAP from request + transcript');
+    return synthesiseSOAP(transcript, caseSummary, consultDetails);
   },
 
   async generateLetter(soapNote, consultDetails) {
@@ -116,17 +95,61 @@ const mockAI = {
   }
 };
 
-// Helper: pull plan-like statements out of the transcript
-function derivePlanFromTranscript(lines) {
-  const planKeywords = /(start|cease|stop|prescribe|arrange|refer|review|order|commence|titrate|continue|book|follow)/i;
-  const planLines = lines
-    .map(l => l.replace(/^[^:]+:\s*/, '')) // strip speaker label
-    .filter(t => planKeywords.test(t))
-    .slice(0, 6);
-  if (planLines.length === 0) {
-    return ['1. Management as discussed during consult', '2. Follow-up as advised', '3. Safety netting provided'];
+// ── SOAP synthesiser: classify the consult request + each transcript line into
+//    Subjective / Objective / Assessment / Plan (used as the always-available
+//    fallback when the Claude API is unavailable). Heuristic, but properly sorts
+//    the conversation rather than dumping it into one field. ──
+const SOAP_PATTERNS = {
+  objective: /(on exam|examination|inspect|palpat|auscultat|vitals?|bp\b|blood pressure|heart rate|\bhr\b|temp(erature)?|\bsats?\b|spo2|ecg|x-?ray|imaging|ultrasound|ct\b|mri|bloods?|pathology|results? (show|are|were)|\b\d+\/\d+\b|\bmmhg\b|\bbpm\b|appears|looks|noted on|photo shows|lesion|rash is|swelling|tender)/i,
+  assessment: /(likely|impression|diagnosis|consistent with|suggestive of|differential|in keeping with|most probably|appears to be|this is (a|an|likely)|i (think|suspect|believe)|points to|secondary to|rule out|working diagnosis)/i,
+  plan: /\b(start|commence|cease|stop|prescribe|switch|titrat\w*|arrange|refer|review|order|request|book|continue|advise|recommend|monitor|repeat|increase|decrease|reduce|wean|admit|escalate|discharge|apply|give|investigat\w*|follow[- ]?up|safety[- ]?net\w*)\b/i,
+};
+// Lines that describe what the patient reports → subjective
+const SUBJECTIVE_HINT = /(reports?|complain|describ|history of|presents? with|started|onset|duration|symptom|pain|feeling|noticed|for the (last|past)|weeks?|days?|months?|denies|no history|patient (is|has|states))/i;
+
+function stripSpeaker(line) { return line.replace(/^[^:]{0,40}:\s*/, '').trim(); }
+
+function synthesiseSOAP(transcript, caseSummary, d) {
+  const lines = (transcript || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const S = [], O = [], A = [], P = [];
+  // The consult request always seeds the subjective (chief complaint + history).
+  if (caseSummary && caseSummary.trim() && !/no transcript/i.test(caseSummary)) {
+    S.push(`Referral reason: ${caseSummary.trim()}`);
   }
-  return planLines.map((t, i) => `${i + 1}. ${t}`);
+  for (const raw of lines) {
+    const stripped = stripSpeaker(raw);
+    if (!stripped) continue;
+    // Split each utterance into sentences so a mixed "diagnosis + plan" line is sorted correctly.
+    const sentences = stripped.split(/(?<=[.!?])\s+|;\s+/).map(x => x.trim()).filter(Boolean);
+    for (const t of sentences) {
+      if (SOAP_PATTERNS.plan.test(t)) P.push(t);
+      else if (SOAP_PATTERNS.assessment.test(t)) A.push(t);
+      else if (SOAP_PATTERNS.objective.test(t)) O.push(t);
+      else if (SUBJECTIVE_HINT.test(t)) S.push(t);
+      else S.push(t);
+    }
+  }
+  const join = (arr) => arr.join(' ');
+  const pid = `${d.patient_initials || 'Patient'} (${d.patient_age || '?'}${d.patient_sex || ''})`;
+
+  return {
+    subjective: S.length
+      ? `${pid}. ${join(S)}`
+      : `${pid}. ${caseSummary ? caseSummary.trim() : 'History as per referral.'}`,
+    objective: O.length
+      ? join(O)
+      : 'No formal examination performed during the video consultation; findings limited to history and any images/results provided.',
+    assessment: A.length
+      ? join(A)
+      : `Working ${(d.specialty || 'clinical').toLowerCase()} impression formulated during the consultation (see Plan).`,
+    plan: P.length
+      ? P.map((t, i) => `${i + 1}. ${t.charAt(0).toUpperCase() + t.slice(1)}`)
+      : ['1. Management as agreed during consultation', '2. Follow-up as advised', '3. Safety-netting advice provided'],
+    follow_up: 'Review per the plan above, or sooner if symptoms worsen.',
+    safety_netting: 'Re-present urgently or attend the nearest Emergency Department if symptoms worsen rapidly, new severe symptoms develop, or the patient feels seriously unwell.',
+    red_flags_identified: null,
+    mbs_item_recommendation: 'PES pathway (GP item 2484–2495 by duration) with specialist video item 91822 (initial) / 91823 (subsequent).'
+  };
 }
 
 // ── Claude API provider ──
@@ -151,16 +174,10 @@ const claudeAI = {
     } catch (e) {
       throw new Error(`Anthropic request failed: ${e.message}`);
     }
-
     data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(`Anthropic API ${res.status}: ${data?.error?.message || 'request rejected'}`);
-    }
-
+    if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${data?.error?.message || 'rejected'}`);
     const text = data.content?.[0]?.text || '';
     if (!text.trim()) throw new Error('Anthropic returned empty content');
-
-    // Try to parse as JSON, fall back to raw text (valid for letter/referral/handout)
     try {
       return JSON.parse(text.replace(/```json\n?|```/g, '').trim());
     } catch {
@@ -179,7 +196,7 @@ const claudeAI = {
   async generateSOAP(transcript, caseSummary, consultDetails) {
     console.log('[AI:CLAUDE] Generating SOAP note');
     return this._call(
-      `You are an experienced medical scribe producing a formal SOAP note from a real-time GP\u2013specialist (${consultDetails.specialty}) video consultation in Australia. Write in precise, professional clinical language suitable for the medical record: correct terminology, standard abbreviations, TGA drug names with doses/routes/frequencies, SI units. The note MUST be derived from what was actually said in the transcript and the referral summary \u2014 do not introduce findings, medications, or decisions that were not discussed. If something was not addressed, omit it rather than inventing it. Be specific: capture the specialist's reasoning, the agreed management, dose changes, investigations ordered, and explicit safety-netting. Return JSON only.`,
+      `You are an experienced medical scribe producing a formal SOAP note from a real-time GP\u2013specialist (${consultDetails.specialty}) video consultation in Australia. Your core task is SYNTHESIS: read the whole conversation and the referral, then actively decide which part of each statement belongs in which SOAP heading \u2014 do not transcribe verbatim and do not dump dialogue into one field. Classify rigorously: SUBJECTIVE = the patient's reported history, symptoms, timeline and concerns (from the referral and what is said about the patient); OBJECTIVE = examination findings, vital signs, and imaging/pathology results actually mentioned (if none, say so); ASSESSMENT = the specialist's clinical reasoning, most likely diagnosis and relevant differentials; PLAN = the agreed actions only (medication changes with TGA drug name + dose/route/frequency, investigations, referrals, monitoring, follow-up). Speaker labels in the transcript indicate who is talking, not which SOAP section the content belongs to \u2014 a GP may state an exam finding (Objective) and a specialist may give history back (Subjective). Write in precise clinical language with standard abbreviations and SI units. Ground everything strictly in the transcript and referral; never invent findings, medications or decisions. Return JSON only.`,
       `Produce a SOAP note for this consultation.\n\nPatient: ${consultDetails.patient_initials}, ${consultDetails.patient_age||''}${consultDetails.patient_sex||''}\nReferring GP: ${consultDetails.gp_name}\nSpecialist: ${consultDetails.specialist_name} (${consultDetails.specialist_qualifications||''})\nSpecialty: ${consultDetails.specialty}\n\nORIGINAL GP CASE SUMMARY:\n"""${caseSummary}"""\n\nVERBATIM CONSULTATION TRANSCRIPT:\n"""${transcript}"""\n\nReturn exactly this JSON:\n{\n  "subjective": "Patient's history and the clinical problem as presented and elaborated during the consult, in clinical prose.",\n  "objective": "Examination findings, observations, vitals, imaging/pathology actually discussed. State 'Not formally examined during video consultation' if none.",\n  "assessment": "The specialist's clinical impression and reasoning, including most likely diagnosis and relevant differentials considered.",\n  "plan": ["Numbered, specific actions: medication changes with exact drug/dose/route/frequency, investigations, referrals, monitoring", "..."],\n  "follow_up": "Explicit review interval and arrangements.",\n  "safety_netting": "Specific advice on what should prompt urgent re-presentation (symptoms, timeframe, where to go).",\n  "red_flags_identified": "Any red flags raised, or null.",\n  "mbs_item_recommendation": "Likely MBS billing pathway (PES item by duration + the specialist video item)."\n}`
     );
   },
@@ -210,8 +227,8 @@ const claudeAI = {
 };
 
 // ── Export active provider ──
-// When using Claude, every method falls back to the transcript-aware mock if the
-// API fails or returns an unusable shape — so documents ALWAYS generate (never blank).
+// With Claude, every method falls back to the transcript-aware synthesiser if the
+// API fails or returns an unusable shape — documents ALWAYS generate (never blank).
 function withFallback(claudeFn, mockFn, isValid) {
   return async (...args) => {
     if (provider !== 'claude') return mockFn(...args);
@@ -220,26 +237,18 @@ function withFallback(claudeFn, mockFn, isValid) {
       if (!isValid(out)) throw new Error('Claude returned an unusable shape');
       return out;
     } catch (e) {
-      console.error(`[AI:CLAUDE] ${claudeFn.name || 'call'} failed — using mock fallback:`, e.message);
+      console.error(`[AI:CLAUDE] failed — using synthesiser fallback:`, e.message);
       return mockFn(...args);
     }
   };
 }
 const hasContent = o => o && typeof o.content === 'string' && o.content.trim().length > 0;
-
 const ai = {
-  structureCase: withFallback(
-    claudeAI.structureCase.bind(claudeAI), mockAI.structureCase.bind(mockAI),
-    o => o && o.presenting),
-  generateSOAP: withFallback(
-    claudeAI.generateSOAP.bind(claudeAI), mockAI.generateSOAP.bind(mockAI),
-    o => o && o.subjective && o.assessment),
-  generateLetter: withFallback(
-    claudeAI.generateLetter.bind(claudeAI), mockAI.generateLetter.bind(mockAI), hasContent),
-  generateReferral: withFallback(
-    claudeAI.generateReferral.bind(claudeAI), mockAI.generateReferral.bind(mockAI), hasContent),
-  generatePatientHandout: withFallback(
-    claudeAI.generatePatientHandout.bind(claudeAI), mockAI.generatePatientHandout.bind(mockAI), hasContent),
+  structureCase: withFallback(claudeAI.structureCase.bind(claudeAI), mockAI.structureCase.bind(mockAI), o => o && o.presenting),
+  generateSOAP: withFallback(claudeAI.generateSOAP.bind(claudeAI), mockAI.generateSOAP.bind(mockAI), o => o && o.subjective && o.assessment),
+  generateLetter: withFallback(claudeAI.generateLetter.bind(claudeAI), mockAI.generateLetter.bind(mockAI), hasContent),
+  generateReferral: withFallback(claudeAI.generateReferral.bind(claudeAI), mockAI.generateReferral.bind(mockAI), hasContent),
+  generatePatientHandout: withFallback(claudeAI.generatePatientHandout.bind(claudeAI), mockAI.generatePatientHandout.bind(mockAI), hasContent),
 };
 
 module.exports = {

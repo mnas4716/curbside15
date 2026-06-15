@@ -434,7 +434,29 @@ function openVideoRoom(consult,displayName){
       configOverwrite:{prejoinPageEnabled:false},interfaceConfigOverwrite:{MOBILE_APP_PROMO:false}});
     log(`Joined video room: ${consult.video_room_id}`);
   }catch(e){log('Jitsi embed failed; opening new tab.');window.open(consult.video_room_url,'_blank');}
-  startTranscription(consult.id,displayName);
+
+  // SCRIBE ↔ MUTE BINDING: the Web Speech recogniser only runs while THIS participant
+  // is unmuted, so a muted session never transcribes the other person's voice bleeding
+  // from its speakers. Each session labels its own speech with its own identity, so
+  // attribution stays correct (GP vs Specialist) and never alternates from one mic.
+  if(jitsiApi){
+    jitsiApi.addListener('audioMuteStatusChanged',(e)=>{
+      if(e && e.muted){
+        stopTranscription();
+        const st=document.getElementById('transcript-status'); if(st)st.textContent='🔇 Muted — not scribing.';
+        const it=document.getElementById('interim-text'); if(it)it.textContent='';
+      } else {
+        startTranscription(consult.id,displayName);
+      }
+    });
+    // Start in the correct state based on whether we join muted or not.
+    Promise.resolve(jitsiApi.isAudioMuted?jitsiApi.isAudioMuted():false)
+      .then(muted=>{ if(!muted) startTranscription(consult.id,displayName); })
+      .catch(()=>startTranscription(consult.id,displayName));
+  } else {
+    // No Jitsi (fallback tab) — run scribe directly.
+    startTranscription(consult.id,displayName);
+  }
   clearInterval(transcriptPollTimer);
   transcriptPollTimer=setInterval(()=>refreshTranscript(consult.id),2500);
   refreshTranscript(consult.id);
