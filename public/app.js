@@ -38,8 +38,6 @@ async function doLogin(){
       phone:document.getElementById('reg-phone').value.trim()||undefined,
       ahpra_number:document.getElementById('reg-ahpra').value.trim()||undefined,
       practice_name:document.getElementById('reg-practice').value.trim()||undefined,
-      postcode:document.getElementById('reg-postcode').value.trim()||undefined,
-      provider_number:document.getElementById('reg-provider').value.trim()||undefined,
       specialty:role==='specialist'?(document.getElementById('reg-specialty').value.trim()||undefined):undefined,
       qualifications:document.getElementById('reg-quals').value.trim()||undefined});
   }else{
@@ -371,33 +369,8 @@ async function refreshAvailabilityLabel(){
   if(r.ok){const btn=document.getElementById('avail-btn');
     btn.textContent=r.data.is_available?'🟢 Available — click to go offline':'⚪ Offline — click to go available';
     btn.className=r.data.is_available?'btn-primary':'btn-secondary';}
-  const e=await api('GET','/specialists/me/effective');
-  const el=document.getElementById('spec-eff');
-  if(e.ok&&el){
-    el.innerHTML=e.data.effective
-      ? `<span style="color:var(--emer)">● You're available now${e.data.scheduled_now&&!e.data.manual_available?' (via your schedule)':''}.</span>`
-      : `<span style="color:var(--mut)">● You're offline — not receiving broadcasts.</span>`;
-  }
-  loadWindows();
 }
 async function toggleAvailability(){const r=await api('POST','/specialists/toggle');if(r.ok){log(`Availability: ${r.data.is_available?'ONLINE':'OFFLINE'}`);refreshAvailabilityLabel();}}
-const DAYNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-async function loadWindows(){
-  const el=document.getElementById('windows');if(!el)return;
-  const r=await api('GET','/specialists/windows');if(!r.ok)return;
-  const w=r.data.windows||[];
-  el.innerHTML=w.length?w.map(x=>`<div class="bill-row" style="display:flex;justify-content:space-between;align-items:center"><span><b>${x.day_name}</b> ${x.start_time}–${x.end_time}</span><button class="btn-secondary btn-sm" onclick="delWindow(${x.id})">Remove</button></div>`).join(''):'<p class="muted">No weekly schedule yet. Add a day + time above.</p>';
-}
-async function addWindow(){
-  const day_of_week=parseInt(document.getElementById('win-day').value,10);
-  const start_time=document.getElementById('win-start').value;
-  const end_time=document.getElementById('win-end').value;
-  const r=await api('POST','/specialists/windows',{day_of_week,start_time,end_time});
-  const m=document.getElementById('sched-msg');
-  if(r.ok){m.innerHTML=`<div style="color:#34d399;font-size:13px;margin-bottom:8px">${r.data.message}</div>`;loadWindows();refreshAvailabilityLabel();}
-  else m.innerHTML=`<div style="color:#f87171;font-size:13px;margin-bottom:8px">${r.data.error||'Failed'}</div>`;
-}
-async function delWindow(id){const r=await api('DELETE','/specialists/windows/'+id);if(r.ok){loadWindows();refreshAvailabilityLabel();}}
 
 // Specialist: live (accepted/active) consults assigned to me, pinned to top
 async function loadSpecLive(){
@@ -581,7 +554,7 @@ async function viewConsultDocs(id){
   // Docs as collapsible accordions
   const docsHtml=docs.map((d,i)=>{
     let c=d.content;
-    if(d.doc_type==='soap_note'){try{const s=JSON.parse(d.content);c=`SUBJECTIVE\n${s.subjective}\n\nOBJECTIVE\n${s.objective}\n\nASSESSMENT\n${s.assessment}\n\nPLAN\n${(s.plan||[]).join('\n')}\n\nFOLLOW-UP\n${s.follow_up}`+(s.safety_netting?`\n\nSAFETY-NETTING\n${s.safety_netting}`:'')+(s.mbs_item_recommendation?`\n\nMBS\n${s.mbs_item_recommendation}`:'');}catch{}}
+    if(d.doc_type==='soap_note'){try{const s=JSON.parse(d.content);c=`SUBJECTIVE\n${s.subjective||'—'}\n\nOBJECTIVE\n${s.objective||'—'}\n\nASSESSMENT\n${s.assessment||'—'}\n\nPLAN\n${(s.plan&&s.plan.length?s.plan:['—']).join('\n')}\n\nFOLLOW-UP\n${s.follow_up||'—'}`+(s.safety_netting?`\n\nSAFETY-NETTING\n${s.safety_netting}`:'')+(s.mbs_item_recommendation?`\n\nMBS\n${s.mbs_item_recommendation}`:'');}catch{}}
     const safe=c.replace(/`/g,'\\`').replace(/\$/g,'\\$');
     const did=`doc-${id}-${i}`;
     window.__docs=window.__docs||{};window.__docs[did]={name:d.doc_type,content:c};
@@ -672,7 +645,7 @@ async function adminConsultDetail(id){
   const p=document.getElementById('admin-consult-detail');p.classList.remove('hidden');
   let docsHtml=docs.map(d=>{
     let content=d.content;
-    if(d.doc_type==='soap_note'){try{const s=JSON.parse(d.content);content=`SUBJECTIVE\n${s.subjective}\n\nOBJECTIVE\n${s.objective}\n\nASSESSMENT\n${s.assessment}\n\nPLAN\n${(s.plan||[]).join('\n')}\n\nFOLLOW-UP\n${s.follow_up}`+(s.safety_netting?`\n\nSAFETY-NETTING\n${s.safety_netting}`:'');}catch{}}
+    if(d.doc_type==='soap_note'){try{const s=JSON.parse(d.content);content=`SUBJECTIVE\n${s.subjective||'—'}\n\nOBJECTIVE\n${s.objective||'—'}\n\nASSESSMENT\n${s.assessment||'—'}\n\nPLAN\n${(s.plan&&s.plan.length?s.plan:['—']).join('\n')}\n\nFOLLOW-UP\n${s.follow_up||'—'}`+(s.safety_netting?`\n\nSAFETY-NETTING\n${s.safety_netting}`:'');}catch{}}
     return `<div class="doc"><div class="doc-type">${d.doc_type.replace(/_/g,' ')}</div><pre>${content}</pre></div>`;
   }).join('')||'<p class="muted">No documents.</p>';
   let notesHtml=notes.length?notes.map(n=>`<div class="doc"><div class="doc-type">${n.note_type} note</div><pre>${n.content}</pre></div>`).join(''):'<p class="muted">No notes.</p>';

@@ -105,7 +105,6 @@
         <div class="row"><div><label>Role</label><select id="reg-role"><option value="gp">GP</option><option value="specialist">Specialist</option><option value="admin">Admin</option></select></div><div><label>Phone</label><input id="reg-phone" placeholder="+61400000000"></div></div>
         <div class="row"><div><label>AHPRA Number</label><input id="reg-ahpra" placeholder="MED0001234"></div><div><label>Practice</label><input id="reg-practice" placeholder="Bondi Medical"></div></div>
         <div class="row"><div><label>Specialty (specialists)</label><input id="reg-specialty" placeholder="Dermatology"></div><div><label>Qualifications</label><input id="reg-quals" placeholder="MBBS FACD"></div></div>
-        <div class="row"><div><label>Practising Postcode (required)</label><input id="reg-postcode" placeholder="2022" maxlength="4" inputmode="numeric"></div><div><label>Provider Number</label><input id="reg-provider" placeholder="GP0001 / SP1234"></div></div>
       </div>
       <div class="btn-row"><button class="btn-primary" id="login-btn" onclick="doLogin()">Login</button><button class="btn-secondary" onclick="toggleRegister()">Toggle Register</button></div>
       <p class="muted" style="margin-top:8px">GP: gp@demo.com · Specialists: derm@ / cardio@ / endo@ / psych@demo.com · Admin: admin@demo.com (all password123)</p>
@@ -173,21 +172,7 @@
       <div id="spec-panel" class="hidden">
         <div id="spec-stats" class="stats hidden" style="margin-bottom:14px"></div>
         <div id="spec-live" class="card hidden" style="border-color:var(--emer)"></div>
-        <div class="card"><h2>Availability</h2>
-          <div id="spec-eff" class="muted" style="margin-bottom:8px"></div>
-          <button id="avail-btn" class="btn-secondary" onclick="toggleAvailability()">⚪ Offline</button>
-          <p class="muted" style="margin-top:6px">Toggle on to receive broadcasts now — or set a weekly schedule below and you'll go available automatically (no need to remember the toggle).</p>
-        </div>
-        <div class="card"><h2>Weekly Schedule</h2>
-          <div id="sched-msg"></div>
-          <div class="row" style="align-items:end">
-            <div><label>Day</label><select id="win-day"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select></div>
-            <div><label>Start</label><input id="win-start" type="time" value="09:00"></div>
-            <div><label>End</label><input id="win-end" type="time" value="17:00"></div>
-            <div><button class="btn-primary" onclick="addWindow()">Add</button></div>
-          </div>
-          <div id="windows" style="margin-top:12px"></div>
-        </div>
+        <div class="card"><h2>Availability</h2><button id="avail-btn" class="btn-secondary" onclick="toggleAvailability()">⚪ Offline</button><p class="muted" style="margin-top:6px">You must be Available to receive broadcasts in your specialty.</p></div>
         <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Incoming (your specialty)</h2><button class="btn-secondary btn-sm" onclick="loadInbox()">Refresh</button></div><div id="spec-inbox" style="margin-top:12px"></div></div>
         <div id="spec-consult-actions" class="card hidden"></div>
         <div id="spec-billing" class="card"></div>

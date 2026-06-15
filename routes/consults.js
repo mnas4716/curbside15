@@ -4,7 +4,6 @@ const db = require('../db');
 const { authenticate, requireRole, requireVerified } = require('../middleware/auth');
 const { structureCase, generateSOAP, generateLetter, generateReferral, generatePatientHandout } = require('../services/ai');
 const { sendConsultNotification } = require('../services/sms');
-const notify = require('../services/notify');
 const { createVideoRoom } = require('../services/video');
 const billing = require('../services/billing');
 
@@ -307,9 +306,8 @@ router.post('/:id/broadcast', requireRole('gp'), async (req, res) => {
     const nowDate = `${_p.year}-${_p.month}-${_p.day}`;
     const nowTime = `${_p.hour}:${_p.minute}`;
 
-    // Available = active + matching specialty + (manual ON, OR within a date slot, OR within a weekly window) now
-    const dow = new Date(`${nowDate}T${nowTime}:00`).getDay(); // 0=Sun..6=Sat (Sydney date)
-    let specialists = db.all(`
+    // Available = active + matching specialty + (manual toggle ON OR within a scheduled slot now)
+    const specialists = db.all(`
       SELECT * FROM users u
       WHERE u.role = 'specialist'
         AND u.specialty = ?
@@ -321,24 +319,10 @@ router.post('/:id/broadcast', requireRole('gp'), async (req, res) => {
             WHERE s.specialist_id = u.id AND s.slot_date = ?
               AND s.start_time <= ? AND s.end_time > ?
           )
-          OR EXISTS (
-            SELECT 1 FROM availability_windows w
-            WHERE w.specialist_id = u.id AND w.is_active = 1 AND w.day_of_week = ?
-              AND w.start_time <= ? AND w.end_time > ?
-          )
         )
-    `, [consult.specialty, nowDate, nowTime, nowTime, dow, nowTime, nowTime]);
-
-    // Rank by NEAREST practising postcode to the GP (numeric proximity heuristic).
-    const gp = db.get('SELECT postcode, first_name, last_name FROM users WHERE id = ?', [consult.gp_id]);
-    const gpPc = parseInt(gp?.postcode, 10);
-    specialists.sort((a, b) => {
-      const da = Number.isFinite(gpPc) && a.postcode ? Math.abs(parseInt(a.postcode, 10) - gpPc) : 1e9;
-      const db_ = Number.isFinite(gpPc) && b.postcode ? Math.abs(parseInt(b.postcode, 10) - gpPc) : 1e9;
-      if (da !== db_) return da - db_;            // nearest first
-      return (b.verified - a.verified);            // then verified
-    });
-    specialists = specialists.slice(0, 10);
+      ORDER BY u.verified DESC, u.updated_at DESC
+      LIMIT 10
+    `, [consult.specialty, nowDate, nowTime, nowTime]);
 
     // NOTE: we no longer hard-fail when nobody is online. The consult still goes
     // to 'broadcasting' so any matching specialist who comes online sees it in their inbox.
@@ -350,18 +334,14 @@ router.post('/:id/broadcast', requireRole('gp'), async (req, res) => {
       WHERE id = ?
     `, [consult.id]);
 
-    // Notify specialists. The NEAREST one is contacted first with SMS + a concurrent
-    // voice call; the rest get an SMS (and still see it in their inbox).
+    // Notify each specialist
     const appUrl = process.env.APP_URL || 'http://localhost:3000';
-    const gpName = `${req.user.first_name} ${req.user.last_name}`;
-    const patientLabel = `${consult.patient_initials || ''} ${consult.patient_age || ''}${consult.patient_sex || ''}`.trim();
     const notified = [];
 
-    for (let i = 0; i < specialists.length; i++) {
-      const spec = specialists[i];
-      const isNearest = i === 0;
+    for (const spec of specialists) {
       const acceptUrl = `${appUrl}/?accept=${consult.id}`;
 
+      // Create notification record
       db.run(`
         INSERT INTO notifications (recipient_id, type, title, body, consult_id)
         VALUES (?, ?, ?, ?, ?)
@@ -372,27 +352,28 @@ router.post('/:id/broadcast', requireRole('gp'), async (req, res) => {
         consult.id
       ]);
 
-      let r = { sms: false };
+      // Send SMS if specialist has phone
       if (spec.phone) {
         try {
-          r = await notify.notifySpecialist({
-            phone: spec.phone,
-            specialistName: `${spec.first_name} ${spec.last_name}`,
-            gpName, specialty: consult.specialty, patient: patientLabel || consult.patient_initials,
-            acceptUrl,
-            withCall: isNearest        // only ring the closest specialist
-          });
-          db.run(`UPDATE notifications SET sms_sent = 1 WHERE consult_id = ? AND recipient_id = ?`,
-            [consult.id, spec.id]);
-        } catch (e) {
-          console.error(`[NOTIFY] Failed for ${spec.email}:`, e.message);
+          const smsResult = await sendConsultNotification(spec, {
+            ...consult,
+            gp_name: `${req.user.first_name} ${req.user.last_name}`
+          }, acceptUrl);
+
+          // Mark notification as SMS sent
+          db.run(`
+            UPDATE notifications SET sms_sent = 1
+            WHERE consult_id = ? AND recipient_id = ?
+          `, [consult.id, spec.id]);
+
+          notified.push({ id: spec.id, name: `${spec.first_name} ${spec.last_name}`, sms: true });
+        } catch (smsErr) {
+          console.error(`[SMS] Failed for ${spec.email}:`, smsErr.message);
+          notified.push({ id: spec.id, name: `${spec.first_name} ${spec.last_name}`, sms: false });
         }
+      } else {
+        notified.push({ id: spec.id, name: `${spec.first_name} ${spec.last_name}`, sms: false, reason: 'no phone' });
       }
-      notified.push({
-        id: spec.id, name: `${spec.first_name} ${spec.last_name}`,
-        postcode: spec.postcode || null, nearest: isNearest,
-        sms: !!(r && r.sms && r.sms.ok !== false), called: isNearest && !!(r && r.voice && r.voice.ok !== false)
-      });
     }
 
     db.save();

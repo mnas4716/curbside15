@@ -15,51 +15,15 @@ function sydneyNow() {
   return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
 }
 
-// Is a specialist within a scheduled slot OR weekly window right now?
+// Is a specialist within a scheduled slot right now?
 function scheduledNow(specialistId) {
   const { date, time } = sydneyNow();
-  const dow = new Date(`${date}T${time}:00`).getDay();
-  const slot = db.get(
+  const row = db.get(
     `SELECT COUNT(*) c FROM availability_slots
      WHERE specialist_id = ? AND slot_date = ? AND start_time <= ? AND end_time > ?`,
     [specialistId, date, time, time]);
-  if (slot.c > 0) return true;
-  const win = db.get(
-    `SELECT COUNT(*) c FROM availability_windows
-     WHERE specialist_id = ? AND is_active = 1 AND day_of_week = ? AND start_time <= ? AND end_time > ?`,
-    [specialistId, dow, time, time]);
-  return win.c > 0;
+  return row.c > 0;
 }
-
-const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-
-// ── GET /api/specialists/windows — recurring weekly availability ──
-router.get('/windows', requireRole('specialist'), (req, res) => {
-  const windows = db.all(
-    `SELECT * FROM availability_windows WHERE specialist_id = ? AND is_active = 1
-     ORDER BY day_of_week, start_time`, [req.user.id]);
-  res.json({ windows: windows.map(w => ({ ...w, day_name: DAYS[w.day_of_week] })) });
-});
-
-// ── POST /api/specialists/windows — add a recurring weekly window ──
-router.post('/windows', requireRole('specialist'), (req, res) => {
-  const { day_of_week, start_time, end_time } = req.body;
-  const d = parseInt(day_of_week, 10);
-  if (!(d >= 0 && d <= 6) || !start_time || !end_time || start_time >= end_time) {
-    return res.status(400).json({ error: 'day_of_week (0-6), start_time and end_time (start < end) required' });
-  }
-  db.run(`INSERT INTO availability_windows (specialist_id, day_of_week, start_time, end_time)
-          VALUES (?, ?, ?, ?)`, [req.user.id, d, start_time, end_time]);
-  db.save();
-  res.status(201).json({ message: `Added ${DAYS[d]} ${start_time}–${end_time}` });
-});
-
-// ── DELETE /api/specialists/windows/:id ──
-router.delete('/windows/:id', requireRole('specialist'), (req, res) => {
-  db.run('DELETE FROM availability_windows WHERE id = ? AND specialist_id = ?', [req.params.id, req.user.id]);
-  db.save();
-  res.json({ message: 'Window removed' });
-});
 
 // ── GET /api/specialists/slots — upcoming scheduled slots ──
 router.get('/slots', requireRole('specialist'), (req, res) => {

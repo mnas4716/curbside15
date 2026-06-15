@@ -12,7 +12,7 @@ router.post('/register', async (req, res) => {
     const {
       email, password, role, first_name, last_name,
       phone, ahpra_number, provider_number,
-      practice_name, practice_address, practice_state, postcode,
+      practice_name, practice_address, practice_state,
       specialty, qualifications, bio
     } = req.body;
 
@@ -38,11 +38,6 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Specialists must provide a specialty' });
     }
 
-    // GPs and specialists must provide a practising postcode (for nearest matching)
-    if (role !== 'admin' && !(postcode && /^\d{4}$/.test(String(postcode).trim()))) {
-      return res.status(400).json({ error: 'A valid 4-digit practising postcode is required' });
-    }
-
     // Check if email already exists
     const existing = db.get('SELECT id FROM users WHERE email = ?', [email]);
     if (existing) {
@@ -57,14 +52,13 @@ router.post('/register', async (req, res) => {
     const result = db.run(`
       INSERT INTO users (uid, role, email, password_hash, first_name, last_name,
         phone, ahpra_number, provider_number, practice_name, practice_address,
-        practice_state, postcode, specialty, qualifications, bio)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        practice_state, specialty, qualifications, bio)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       uid, role, email.toLowerCase().trim(), password_hash,
       first_name.trim(), last_name.trim(),
       phone || null, ahpra_number || null, provider_number || null,
       practice_name || null, practice_address || null, practice_state || null,
-      postcode ? String(postcode).trim() : null,
       specialty || null, qualifications || null, bio || null
     ]);
 

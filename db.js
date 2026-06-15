@@ -255,11 +255,6 @@ function runMigrations() {
     wrapper.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
   } catch (e) { /* column already exists */ }
 
-  // Migration: add practice postcode (for nearest-specialist matching)
-  try {
-    wrapper.exec('ALTER TABLE users ADD COLUMN postcode TEXT');
-  } catch (e) { /* column already exists */ }
-
   // Migration: add new consult patient/booking columns to existing DBs
   const consultCols = [
     'patient_first_name TEXT', 'patient_last_name TEXT', 'patient_medicare TEXT',

@@ -132,25 +132,35 @@ function derivePlanFromTranscript(lines) {
 // ── Claude API provider ──
 const claudeAI = {
   async _call(systemPrompt, userPrompt) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 3000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      })
-    });
+    let res, data;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 3000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      });
+    } catch (e) {
+      throw new Error(`Anthropic request failed: ${e.message}`);
+    }
 
-    const data = await res.json();
+    data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(`Anthropic API ${res.status}: ${data?.error?.message || 'request rejected'}`);
+    }
+
     const text = data.content?.[0]?.text || '';
+    if (!text.trim()) throw new Error('Anthropic returned empty content');
 
-    // Try to parse as JSON, fall back to raw text
+    // Try to parse as JSON, fall back to raw text (valid for letter/referral/handout)
     try {
       return JSON.parse(text.replace(/```json\n?|```/g, '').trim());
     } catch {
@@ -200,7 +210,37 @@ const claudeAI = {
 };
 
 // ── Export active provider ──
-const ai = provider === 'claude' ? claudeAI : mockAI;
+// When using Claude, every method falls back to the transcript-aware mock if the
+// API fails or returns an unusable shape — so documents ALWAYS generate (never blank).
+function withFallback(claudeFn, mockFn, isValid) {
+  return async (...args) => {
+    if (provider !== 'claude') return mockFn(...args);
+    try {
+      const out = await claudeFn(...args);
+      if (!isValid(out)) throw new Error('Claude returned an unusable shape');
+      return out;
+    } catch (e) {
+      console.error(`[AI:CLAUDE] ${claudeFn.name || 'call'} failed — using mock fallback:`, e.message);
+      return mockFn(...args);
+    }
+  };
+}
+const hasContent = o => o && typeof o.content === 'string' && o.content.trim().length > 0;
+
+const ai = {
+  structureCase: withFallback(
+    claudeAI.structureCase.bind(claudeAI), mockAI.structureCase.bind(mockAI),
+    o => o && o.presenting),
+  generateSOAP: withFallback(
+    claudeAI.generateSOAP.bind(claudeAI), mockAI.generateSOAP.bind(mockAI),
+    o => o && o.subjective && o.assessment),
+  generateLetter: withFallback(
+    claudeAI.generateLetter.bind(claudeAI), mockAI.generateLetter.bind(mockAI), hasContent),
+  generateReferral: withFallback(
+    claudeAI.generateReferral.bind(claudeAI), mockAI.generateReferral.bind(mockAI), hasContent),
+  generatePatientHandout: withFallback(
+    claudeAI.generatePatientHandout.bind(claudeAI), mockAI.generatePatientHandout.bind(mockAI), hasContent),
+};
 
 module.exports = {
   structureCase: (c, s) => ai.structureCase(c, s),
